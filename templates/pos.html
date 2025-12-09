@@ -135,32 +135,61 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script> <script>
+    // --- VARIABLES GLOBALES DE CONTEXTO DE DJANGO ---
+    // Estas variables son leídas directamente desde la vista 'pos_page' de Django
+    const currentBranchId = {{ current_branch_id|default:"null" }}; 
+    const currentBranchName = "{{ current_branch_name|default:'Error: Sucursal no asignada' }}";
+    
+    // Variables de estado del POS
     let allProducts = [];
     let cart = [];
-    let currentBranchId = null;
     const myToken = localStorage.getItem('access_token'); 
 
-    async function initPOS() {
-        if (!myToken) { window.location.href = '/login'; return; }
+    // --------------------------------------------------------------------------------------------------
+    // 1. INICIALIZACIÓN DEL POS (AQUÍ SE CORRIGE LA LÓGICA DE ASIGNACIÓN DE SUCURSAL)
+    // --------------------------------------------------------------------------------------------------
 
-        try {
-            const resBranch = await fetch('/api/branches/', { headers: { 'Authorization': 'Bearer ' + myToken } });
-            const branches = await resBranch.json();
+    async function initPOS() {
+        if (!myToken) { 
+            window.location.href = '/login'; 
+            return; 
+        }
+
+        // 1. Verificar la asignación de sucursal
+        // El chequeo es vital para asegurar que el ID es un número real y no un string como "null"
+        if (currentBranchId && currentBranchId !== 'null') {
             
-            if (branches.length > 0) {
-                currentBranchId = branches[0].id;
-                document.getElementById('branch-name').innerText = branches[0].name;
-                loadInventory(currentBranchId);
-            } else {
-                document.getElementById('branch-name').innerText = "Sin Sucursal";
-                alert("⚠️ Crea una sucursal en el Admin primero.");
-            }
-        } catch (error) { console.error("Error POS:", error); }
+            // 2. Establecer el nombre de la sucursal en la interfaz (FIX FINAL)
+            document.getElementById('branch-name').innerText = currentBranchName;
+            
+            // 3. Cargar el inventario FILTRADO por la sucursal asignada al usuario
+            loadInventory(currentBranchId); 
+            
+        } else {
+            // Manejo de Error: Si el usuario no tiene sucursal asignada
+            document.getElementById('branch-name').innerText = currentBranchName; // Muestra el mensaje de error
+            Swal.fire({
+                title: "Error de Asignación",
+                text: `⚠️ Tu usuario no tiene una sucursal asignada. Por favor, contacta al administrador.`,
+                icon: "error"
+            });
+        }
     }
 
+    // --------------------------------------------------------------------------------------------------
+    // 2. LÓGICA DE INVENTARIO Y CATÁLOGO
+    // --------------------------------------------------------------------------------------------------
+
     async function loadInventory(branchId) {
+        // Ahora enviamos el ID correcto de la sucursal asignada al usuario
         const res = await fetch(`/api/inventory/?branch=${branchId}`, { headers: { 'Authorization': 'Bearer ' + myToken } });
+        
+        if (!res.ok) {
+             Swal.fire('Error', 'No se pudo cargar el inventario. Verifica la API.', 'error');
+             return;
+        }
+
         allProducts = await res.json();
         renderProducts(allProducts);
     }
@@ -170,7 +199,6 @@
         tbody.innerHTML = '';
         products.forEach(item => {
             if (item.stock > 0) {
-                // Si no hay imagen, usar icono
                 const imgTag = item.product_image 
                     ? `<img src="${item.product_image}" class="rounded" width="40" height="40">`
                     : `<i class="bi bi-box-seam fs-4 text-muted"></i>`;
@@ -207,7 +235,7 @@
         const existing = cart.find(c => c.product === id);
         if (existing) {
             if (existing.quantity < maxStock) existing.quantity++;
-            else alert("Stock máximo alcanzado");
+            else Swal.fire('Stock Máximo', 'Has alcanzado el límite de stock disponible.', 'warning');
         } else {
             cart.push({ product: id, name: name, price: price, quantity: 1, maxStock: maxStock });
         }
@@ -238,7 +266,9 @@
         totalSpan.innerText = total;
         document.getElementById('total-items').innerText = itemsCount;
         
-        if (cart.length === 0) list.innerHTML = '<li class="list-group-item text-center text-muted py-5"><i class="bi bi-basket display-4"></i><br>Carro vacío</li>';
+        if (cart.length === 0) {
+            list.innerHTML = '<li class="list-group-item text-center text-muted py-5"><i class="bi bi-basket display-4"></i><br>Carro vacío</li>';
+        }
     }
 
     function removeFromCart(index) {
@@ -246,14 +276,23 @@
         renderCart();
     }
     
-    function clearCart() { cart = []; renderCart(); }
+    function clearCart() { 
+        cart = []; 
+        renderCart(); 
+    }
+
+    // --------------------------------------------------------------------------------------------------
+    // 3. PROCESO DE VENTA (SALE) Y TICKET
+    // --------------------------------------------------------------------------------------------------
 
     async function processSale() {
-        if (cart.length === 0) return alert("El carro está vacío");
+        if (cart.length === 0) return Swal.fire('Carro Vacío', 'Agrega productos antes de pagar.', 'warning');
+        if (!currentBranchId || currentBranchId === 'null') return Swal.fire('Error', 'No hay sucursal asignada para procesar la venta.', 'error');
+
         const totalVenta = document.getElementById('total-amount').innerText;
 
         const payload = {
-            branch: currentBranchId,
+            branch: currentBranchId, 
             payment_method: 'CASH',
             items: cart.map(c => ({ product: c.product, quantity: c.quantity }))
         };
@@ -266,103 +305,21 @@
             });
 
             if (response.ok) {
-                // ÉXITO: MOSTRAR TICKET
-                showTicket(totalVenta);
-                clearCart();
-                loadInventory(currentBranchId);
-            } else {
-                const err = await response.json();
-                alert("❌ Error: " + JSON.stringify(err));
-            }
-        } catch (error) { alert("Error de conexión"); }
-    }
-
-    // --- FUNCIONES DE BOLETA ---
-    function showTicket(total) {
-        const ticketModal = new bootstrap.Modal(document.getElementById('ticketModal'));
-        const ticketItems = document.getElementById('ticket-items');
-        const dateNow = new Date().toLocaleString();
-
-        document.getElementById('ticket-date').innerText = dateNow;
-        document.getElementById('ticket-total').innerText = total;
-        
-        // Llenar items de la boleta (usando una copia del carro actual antes de borrarlo)
-        // NOTA: Como en processSale llamamos a clearCart(), necesitamos usar los datos previos.
-        // Haremos un truco: la función processSale pasa el control aquí.
-        // Mejor modificamos processSale para NO borrar el carro hasta cerrar el ticket? 
-        // No, mejor reconstruimos visualmente.
-        // *Corrección*: Usaremos la variable 'cart' actual antes de que clearCart la borre.
-        // Espera, processSale llama a clearCart() DESPUÉS de showTicket? NO.
-        // Vamos a ajustar processSale arriba.
-    }
-    
-    // Ajuste visual: Re-escribo showTicket para usar el cart global antes de que se borre
-    // Pero espera, processSale llama a clearCart() inmediatamente. 
-    // Vamos a arreglar processSale para que limpie DESPUÉS de generar el HTML del ticket.
-</script>
-
-<script>
-    // ... (Variables globales iguales) ...
-    
-    // Reemplazo de processSale y showTicket para que funcionen coordinados
-    async function processSale() {
-        // Validación visual si el carro está vacío
-        if (cart.length === 0) {
-            return Swal.fire({
-                title: 'Carro Vacío',
-                text: 'Agrega productos antes de pagar.',
-                icon: 'warning',
-                confirmButtonText: 'OK'
-            });
-        }
-
-        const totalVenta = document.getElementById('total-amount').innerText;
-
-        const payload = {
-            branch: currentBranchId,
-            payment_method: 'CASH',
-            items: cart.map(c => ({ product: c.product, quantity: c.quantity }))
-        };
-
-        try {
-            const response = await fetch('/api/sales/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + myToken },
-                body: JSON.stringify(payload)
-            });
-
-            if (response.ok) {
-                // 1. Generar HTML del ticket con los datos actuales (ANTES de borrar el carro)
                 prepareTicketHTML(totalVenta);
                 
-                // 2. Alerta Bonita de Éxito
-                Swal.fire({
-                    title: '¡Venta Exitosa!',
-                    text: 'Transacción registrada correctamente.',
-                    icon: 'success',
-                    timer: 2000, // Dura 2 segundos
-                    showConfirmButton: false
-                });
+                Swal.fire({ title: '¡Venta Exitosa!', text: 'Transacción registrada.', icon: 'success', timer: 2000, showConfirmButton: false });
 
-                // 3. Mostrar el Ticket (esperamos 1.5 segundos para que vean la alerta verde primero)
                 setTimeout(() => {
                     const ticketModal = new bootstrap.Modal(document.getElementById('ticketModal'));
                     ticketModal.show();
                 }, 1500);
                 
-                // 4. Limpiar carro y recargar inventario de fondo
                 clearCart();
-                loadInventory(currentBranchId);
+                loadInventory(currentBranchId); 
 
             } else {
                 const err = await response.json();
-                // Alerta Bonita de Error
-                Swal.fire({
-                    title: 'Error en la venta',
-                    text: JSON.stringify(err),
-                    icon: 'error',
-                    confirmButtonText: 'Revisar'
-                });
+                Swal.fire({ title: 'Error en la venta', text: JSON.stringify(err), icon: 'error', confirmButtonText: 'Revisar' });
             }
         } catch (error) { 
             Swal.fire('Error de conexión', 'No se pudo conectar con el servidor', 'error');
@@ -372,7 +329,7 @@
     function prepareTicketHTML(total) {
         const ticketItems = document.getElementById('ticket-items');
         const dateNow = new Date().toLocaleString();
-
+        
         document.getElementById('ticket-date').innerText = dateNow;
         document.getElementById('ticket-total').innerText = total;
         
@@ -398,7 +355,7 @@
         modal.hide();
     }
 
-    // Iniciar
+    // INICIAR EL POS AUTOMÁTICAMENTE
     initPOS();
 </script>
 {% endblock %}
