@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2 class="mb-4">📊 Reportes de Gestión</h2>
+
+<ul class="nav nav-tabs mb-4" id="reportTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="sales-tab" data-bs-toggle="tab" data-bs-target="#sales" type="button">💰 Ventas Diarias</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="stock-tab" data-bs-toggle="tab" data-bs-target="#stock" type="button">📦 Stock Actual</button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    
+    <div class="tab-pane fade show active" id="sales" role="tabpanel">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title text-success">Resumen de Ventas por Día</h5>
+                <table class="table table-striped mt-3">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Total Vendido ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sales-table-body">
+                        <tr><td colspan="2" class="text-center">Cargando datos...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="stock" role="tabpanel">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title text-warning">Inventario General</h5>
+                <table class="table table-bordered mt-3">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Sucursal</th>
+                            <th>SKU</th>
+                            <th>Producto</th>
+                            <th>Stock</th>
+                            <th>Precio Unit.</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-table-body">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // CORRECCIÓN: No declaramos 'const token' aquí arriba para evitar el error.
+    // Usaremos una variable local dentro de la función.
+
+    async function loadReports() {
+        const localToken = localStorage.getItem('access_token'); // Nombre único
+
+        if (!localToken) {
+            window.location.href = '/login';
+            return;
+        }
+
+        // 1. Cargar Reporte de Ventas
+        try {
+            const resSales = await fetch('/api/reports/sales/', { 
+                headers: { 'Authorization': 'Bearer ' + localToken } 
+            });
+            
+            if (!resSales.ok) throw new Error("Error API Ventas");
+
+            const salesData = await resSales.json();
+            const salesBody = document.getElementById('sales-table-body');
+            salesBody.innerHTML = '';
+
+            if (salesData.length === 0) {
+                salesBody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No hay ventas registradas hoy.</td></tr>';
+            } else {
+                salesData.forEach(row => {
+                    salesBody.innerHTML += `
+                        <tr>
+                            <td>${row.date}</td>
+                            <td><strong>$${row.total_sales}</strong></td>
+                        </tr>
+                    `;
+                });
+            }
+        } catch (e) { 
+            console.error(e);
+            document.getElementById('sales-table-body').innerHTML = `<tr><td colspan="2" class="text-danger">Error cargando ventas</td></tr>`;
+        }
+
+        // 2. Cargar Reporte de Stock
+        try {
+            const resStock = await fetch('/api/reports/stock/', { 
+                headers: { 'Authorization': 'Bearer ' + localToken } 
+            });
+            
+            if (!resStock.ok) throw new Error("Error API Stock");
+
+            const stockData = await resStock.json();
+            const stockBody = document.getElementById('stock-table-body');
+            stockBody.innerHTML = '';
+            
+            if (stockData.length === 0) {
+                 stockBody.innerHTML = '<tr><td colspan="5" class="text-center">Inventario vacío</td></tr>';
+            } else {
+                stockData.forEach(item => {
+                    // Pintar de rojo si el stock es bajo (menos de 10)
+                    const colorClass = item.stock < 10 ? 'text-danger fw-bold' : '';
+                    
+                    stockBody.innerHTML += `
+                        <tr>
+                            <td>${item.branch}</td>
+                            <td>${item.sku}</td>
+                            <td>${item.product}</td>
+                            <td class="${colorClass}">${item.stock}</td>
+                            <td>$${item.price}</td>
+                        </tr>
+                    `;
+                });
+            }
+        } catch (e) { console.error("Error cargando stock", e); }
+    }
+
+    // Cargar al iniciar
+    loadReports();
+</script>
+{% endblock %}

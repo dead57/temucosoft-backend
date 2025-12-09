@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="text-center mt-5" id="loading">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Cargando...</span>
+    </div>
+    <p>Verificando sesión...</p>
+</div>
+
+<div id="dashboard-content" style="display: none;">
+    <h1 class="display-4">Bienvenido a TemucoSoft</h1>
+    <p class="lead" id="welcome-msg">Panel de Gestión</p>
+    <hr class="my-4">
+
+    <div class="row" id="menu-cards">
+        </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function initDashboard() {
+        const token = localStorage.getItem('access_token');
+        
+        // 1. Si no hay token, mandar al login
+        if (!token) {
+            window.location.href = '/login';
+            return;
+        }
+
+        try {
+            // 2. Pedir datos del usuario a la API
+            const response = await fetch('/api/users/me/', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (response.ok) {
+                const user = await response.json();
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('dashboard-content').style.display = 'block';
+                document.getElementById('welcome-msg').innerText = `Hola, ${user.username} (${user.role}) - ${user.company_name}`;
+                
+                renderMenu(user.role);
+            } else {
+                // Si el token expiró, cerrar sesión
+                logout();
+            }
+        } catch (error) {
+            console.error(error);
+            logout();
+        }
+    }
+
+    function renderMenu(role) {
+        const container = document.getElementById('menu-cards');
+        let html = '';
+
+        // Definición de Tarjetas con Iconos Bootstrap y Clases Hover
+        const cardPOS = `
+            <div class="col-md-4 mb-4">
+                <div class="card hover-card bg-white shadow-sm h-100 text-dark">
+                    <div class="card-body text-center p-4">
+                        <div class="display-4 text-success mb-3"><i class="bi bi-cart4"></i></div>
+                        <h4 class="card-title fw-bold">Punto de Venta</h4>
+                        <p class="text-muted">Gestión de caja y ventas rápidas.</p>
+                        <a href="/pos/" class="btn btn-success btn-custom w-100 stretched-link">Ir al POS</a>
+                    </div>
+                </div>
+            </div>`;
+
+        const cardInventory = `
+            <div class="col-md-4 mb-4">
+                <div class="card hover-card bg-white shadow-sm h-100 text-dark">
+                    <div class="card-body text-center p-4">
+                        <div class="display-4 text-warning mb-3"><i class="bi bi-boxes"></i></div>
+                        <h4 class="card-title fw-bold">Inventario</h4>
+                        <p class="text-muted">Productos, Stock y Precios.</p>
+                        <a href="/admin/inventory/inventory/" class="btn btn-warning btn-custom w-100 stretched-link text-white">Gestionar</a>
+                    </div>
+                </div>
+            </div>`;
+
+        const cardReports = `
+            <div class="col-md-4 mb-4">
+                <div class="card hover-card bg-white shadow-sm h-100 text-dark">
+                    <div class="card-body text-center p-4">
+                        <div class="display-4 text-info mb-3"><i class="bi bi-graph-up-arrow"></i></div>
+                        <h4 class="card-title fw-bold">Reportes</h4>
+                        <p class="text-muted">Métricas y análisis de ventas.</p>
+                        <a href="/reports/" class="btn btn-info btn-custom w-100 stretched-link text-white">Ver Reportes</a>
+                    </div>
+                </div>
+            </div>`;
+            
+        // NUEVA TARJETA: API DOCS (Para el perfil técnico/admin)
+        const cardAPI = `
+            <div class="col-md-4 mb-4">
+                <div class="card hover-card bg-white shadow-sm h-100 text-dark">
+                    <div class="card-body text-center p-4">
+                        <div class="display-4 text-secondary mb-3"><i class="bi bi-code-slash"></i></div>
+                        <h4 class="card-title fw-bold">API Docs</h4>
+                        <p class="text-muted">Documentación técnica Swagger.</p>
+                        <a href="/api/docs/" target="_blank" class="btn btn-outline-secondary btn-custom w-100 stretched-link">Ver Docs</a>
+                    </div>
+                </div>
+            </div>`;
+
+        // Renderizado según roles
+        if (role === 'VENDEDOR') {
+            html += cardPOS;
+        } else if (role === 'GERENTE') {
+            html += cardInventory + cardReports;
+        } else {
+            // Admin ve todo + API Docs
+            html += cardPOS + cardInventory + cardReports + cardAPI;
+        }
+
+        container.innerHTML = html;
+    }
+
+    // Ejecutar al cargar
+    initDashboard();
+</script>
+{% endblock %}

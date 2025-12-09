@@ -1,0 +1,404 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-box-seam"></i> Catálogo</h5>
+                <small>Haga clic en agregar</small>
+            </div>
+            <div class="card-body">
+                <div class="input-group mb-3">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" id="search-input" class="form-control" placeholder="Buscar por nombre o SKU..." onkeyup="filterProducts()">
+                </div>
+                
+                <div class="table-responsive" style="height: 500px; overflow-y: auto;">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 50px;">Img</th>
+                                <th>SKU</th>
+                                <th>Producto</th>
+                                <th>Precio</th>
+                                <th>Stock</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="products-table">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card shadow border-0 h-100">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-cart4"></i> Nueva Venta</h5>
+            </div>
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3 p-2 bg-light rounded border">
+                    <i class="bi bi-shop"></i> <strong>Sucursal:</strong> <span id="branch-name" class="text-primary">Cargando...</span>
+                </div>
+
+                <div class="flex-grow-1 border rounded p-2 mb-3 bg-white" style="overflow-y: auto; max-height: 400px;">
+                    <ul class="list-group list-group-flush" id="cart-list">
+                        <li class="list-group-item text-center text-muted py-5">
+                            <i class="bi bi-basket display-4"></i><br>Carro vacío
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="bg-light p-3 rounded">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Items:</span>
+                        <span id="total-items">0</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <h3 class="fw-bold">Total:</h3>
+                        <h3 class="fw-bold text-success">$<span id="total-amount">0</span></h3>
+                    </div>
+                </div>
+                
+                <hr>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success btn-lg py-3" onclick="processSale()">
+                        <i class="bi bi-cash-coin"></i> PAGAR / EMITIR
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="clearCart()">
+                        <i class="bi bi-trash"></i> Limpiar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="ticketModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-body p-4" id="ticket-content" style="font-family: 'Courier New', Courier, monospace;">
+                <div class="text-center mb-3">
+                    <h5 class="fw-bold">TEMUCOSOFT S.A.</h5>
+                    <p class="small mb-0">RUT: 76.123.456-7</p>
+                    <p class="small">Av. Alemania 123, Temuco</p>
+                    <p class="small" id="ticket-date">Fecha: --/--/----</p>
+                    <hr class="border-dark border-2 border-top">
+                    <h6 class="fw-bold">BOLETA ELECTRÓNICA</h6>
+                </div>
+                
+                <table class="table table-borderless table-sm small">
+                    <thead>
+                        <tr class="border-bottom border-dark">
+                            <th>Cant.</th>
+                            <th>Item</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ticket-items">
+                        </tbody>
+                </table>
+                
+                <hr class="border-dark border-2 border-top">
+                <div class="d-flex justify-content-between fw-bold fs-5">
+                    <span>TOTAL:</span>
+                    <span>$<span id="ticket-total">0</span></span>
+                </div>
+                <div class="text-center mt-4 small">
+                    <p>¡Gracias por su compra!</p>
+                    <p>www.temucosoft.cl</p>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-center no-print">
+                <button type="button" class="btn btn-primary" onclick="printTicket()">
+                    <i class="bi bi-printer"></i> Imprimir
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="closeTicket()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Estilos solo para impresión */
+    @media print {
+        body * { visibility: hidden; }
+        #ticketModal, #ticket-content * { visibility: visible; }
+        #ticketModal { position: absolute; left: 0; top: 0; width: 100%; margin: 0; }
+        .modal-footer { display: none; }
+        .modal-dialog { margin: 0; width: 100%; max-width: 100%; }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allProducts = [];
+    let cart = [];
+    let currentBranchId = null;
+    const myToken = localStorage.getItem('access_token'); 
+
+    async function initPOS() {
+        if (!myToken) { window.location.href = '/login'; return; }
+
+        try {
+            const resBranch = await fetch('/api/branches/', { headers: { 'Authorization': 'Bearer ' + myToken } });
+            const branches = await resBranch.json();
+            
+            if (branches.length > 0) {
+                currentBranchId = branches[0].id;
+                document.getElementById('branch-name').innerText = branches[0].name;
+                loadInventory(currentBranchId);
+            } else {
+                document.getElementById('branch-name').innerText = "Sin Sucursal";
+                alert("⚠️ Crea una sucursal en el Admin primero.");
+            }
+        } catch (error) { console.error("Error POS:", error); }
+    }
+
+    async function loadInventory(branchId) {
+        const res = await fetch(`/api/inventory/?branch=${branchId}`, { headers: { 'Authorization': 'Bearer ' + myToken } });
+        allProducts = await res.json();
+        renderProducts(allProducts);
+    }
+
+    function renderProducts(products) {
+        const tbody = document.getElementById('products-table');
+        tbody.innerHTML = '';
+        products.forEach(item => {
+            if (item.stock > 0) {
+                // Si no hay imagen, usar icono
+                const imgTag = item.product_image 
+                    ? `<img src="${item.product_image}" class="rounded" width="40" height="40">`
+                    : `<i class="bi bi-box-seam fs-4 text-muted"></i>`;
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${imgTag}</td>
+                        <td class="small text-muted">${item.product_sku}</td>
+                        <td class="fw-bold">${item.product_name}</td>
+                        <td class="text-primary">$${item.product_price}</td>
+                        <td><span class="badge bg-secondary">${item.stock}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary rounded-circle" 
+                                onclick="addToCart(${item.product}, '${item.product_name}', ${item.product_price}, ${item.stock})">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+    }
+
+    function filterProducts() {
+        const text = document.getElementById('search-input').value.toLowerCase();
+        const filtered = allProducts.filter(p => 
+            p.product_name.toLowerCase().includes(text) || 
+            p.product_sku.toLowerCase().includes(text)
+        );
+        renderProducts(filtered);
+    }
+
+    function addToCart(id, name, price, maxStock) {
+        const existing = cart.find(c => c.product === id);
+        if (existing) {
+            if (existing.quantity < maxStock) existing.quantity++;
+            else alert("Stock máximo alcanzado");
+        } else {
+            cart.push({ product: id, name: name, price: price, quantity: 1, maxStock: maxStock });
+        }
+        renderCart();
+    }
+
+    function renderCart() {
+        const list = document.getElementById('cart-list');
+        const totalSpan = document.getElementById('total-amount');
+        list.innerHTML = '';
+        let total = 0;
+        let itemsCount = 0;
+
+        cart.forEach((item, index) => {
+            total += item.price * item.quantity;
+            itemsCount += item.quantity;
+            list.innerHTML += `
+                <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                    <div>
+                        <div class="fw-bold">${item.name}</div>
+                        <small class="text-muted">$${item.price} x ${item.quantity}</small>
+                    </div>
+                    <button class="btn btn-sm text-danger" onclick="removeFromCart(${index})"><i class="bi bi-trash"></i></button>
+                </li>
+            `;
+        });
+
+        totalSpan.innerText = total;
+        document.getElementById('total-items').innerText = itemsCount;
+        
+        if (cart.length === 0) list.innerHTML = '<li class="list-group-item text-center text-muted py-5"><i class="bi bi-basket display-4"></i><br>Carro vacío</li>';
+    }
+
+    function removeFromCart(index) {
+        cart.splice(index, 1);
+        renderCart();
+    }
+    
+    function clearCart() { cart = []; renderCart(); }
+
+    async function processSale() {
+        if (cart.length === 0) return alert("El carro está vacío");
+        const totalVenta = document.getElementById('total-amount').innerText;
+
+        const payload = {
+            branch: currentBranchId,
+            payment_method: 'CASH',
+            items: cart.map(c => ({ product: c.product, quantity: c.quantity }))
+        };
+
+        try {
+            const response = await fetch('/api/sales/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + myToken },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                // ÉXITO: MOSTRAR TICKET
+                showTicket(totalVenta);
+                clearCart();
+                loadInventory(currentBranchId);
+            } else {
+                const err = await response.json();
+                alert("❌ Error: " + JSON.stringify(err));
+            }
+        } catch (error) { alert("Error de conexión"); }
+    }
+
+    // --- FUNCIONES DE BOLETA ---
+    function showTicket(total) {
+        const ticketModal = new bootstrap.Modal(document.getElementById('ticketModal'));
+        const ticketItems = document.getElementById('ticket-items');
+        const dateNow = new Date().toLocaleString();
+
+        document.getElementById('ticket-date').innerText = dateNow;
+        document.getElementById('ticket-total').innerText = total;
+        
+        // Llenar items de la boleta (usando una copia del carro actual antes de borrarlo)
+        // NOTA: Como en processSale llamamos a clearCart(), necesitamos usar los datos previos.
+        // Haremos un truco: la función processSale pasa el control aquí.
+        // Mejor modificamos processSale para NO borrar el carro hasta cerrar el ticket? 
+        // No, mejor reconstruimos visualmente.
+        // *Corrección*: Usaremos la variable 'cart' actual antes de que clearCart la borre.
+        // Espera, processSale llama a clearCart() DESPUÉS de showTicket? NO.
+        // Vamos a ajustar processSale arriba.
+    }
+    
+    // Ajuste visual: Re-escribo showTicket para usar el cart global antes de que se borre
+    // Pero espera, processSale llama a clearCart() inmediatamente. 
+    // Vamos a arreglar processSale para que limpie DESPUÉS de generar el HTML del ticket.
+</script>
+
+<script>
+    // ... (Variables globales iguales) ...
+    
+    // Reemplazo de processSale y showTicket para que funcionen coordinados
+    async function processSale() {
+        // Validación visual si el carro está vacío
+        if (cart.length === 0) {
+            return Swal.fire({
+                title: 'Carro Vacío',
+                text: 'Agrega productos antes de pagar.',
+                icon: 'warning',
+                confirmButtonText: 'OK'
+            });
+        }
+
+        const totalVenta = document.getElementById('total-amount').innerText;
+
+        const payload = {
+            branch: currentBranchId,
+            payment_method: 'CASH',
+            items: cart.map(c => ({ product: c.product, quantity: c.quantity }))
+        };
+
+        try {
+            const response = await fetch('/api/sales/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + myToken },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                // 1. Generar HTML del ticket con los datos actuales (ANTES de borrar el carro)
+                prepareTicketHTML(totalVenta);
+                
+                // 2. Alerta Bonita de Éxito
+                Swal.fire({
+                    title: '¡Venta Exitosa!',
+                    text: 'Transacción registrada correctamente.',
+                    icon: 'success',
+                    timer: 2000, // Dura 2 segundos
+                    showConfirmButton: false
+                });
+
+                // 3. Mostrar el Ticket (esperamos 1.5 segundos para que vean la alerta verde primero)
+                setTimeout(() => {
+                    const ticketModal = new bootstrap.Modal(document.getElementById('ticketModal'));
+                    ticketModal.show();
+                }, 1500);
+                
+                // 4. Limpiar carro y recargar inventario de fondo
+                clearCart();
+                loadInventory(currentBranchId);
+
+            } else {
+                const err = await response.json();
+                // Alerta Bonita de Error
+                Swal.fire({
+                    title: 'Error en la venta',
+                    text: JSON.stringify(err),
+                    icon: 'error',
+                    confirmButtonText: 'Revisar'
+                });
+            }
+        } catch (error) { 
+            Swal.fire('Error de conexión', 'No se pudo conectar con el servidor', 'error');
+        }
+    }
+
+    function prepareTicketHTML(total) {
+        const ticketItems = document.getElementById('ticket-items');
+        const dateNow = new Date().toLocaleString();
+
+        document.getElementById('ticket-date').innerText = dateNow;
+        document.getElementById('ticket-total').innerText = total;
+        
+        ticketItems.innerHTML = '';
+        cart.forEach(item => {
+            ticketItems.innerHTML += `
+                <tr>
+                    <td>${item.quantity}</td>
+                    <td>${item.name.substring(0, 15)}</td>
+                    <td class="text-end">$${item.price * item.quantity}</td>
+                </tr>
+            `;
+        });
+    }
+
+    function printTicket() {
+        window.print();
+    }
+
+    function closeTicket() {
+        const modalEl = document.getElementById('ticketModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
+    }
+
+    // Iniciar
+    initPOS();
+</script>
+{% endblock %}
