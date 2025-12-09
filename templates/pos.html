@@ -135,7 +135,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script> <script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
     // --- VARIABLES GLOBALES DE CONTEXTO DE DJANGO ---
     // Estas variables son leídas directamente desde la vista 'pos_page' de Django
     const currentBranchId = {{ current_branch_id|default:"null" }}; 
