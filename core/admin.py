@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, Company, Branch # <-- Importamos todos los modelos necesarios
+from .models import User, Company
+from inventory.models import Branch
 
 # Personalizamos el panel de usuario para que muestre tus campos nuevos
 class CustomUserAdmin(UserAdmin):
