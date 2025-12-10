@@ -13,6 +13,8 @@ from inventory.views import ProductViewSet, BranchViewSet, SupplierViewSet, Inve
 # 👇 AQUÍ AGREGAMOS 'pos_page'
 from sales.views import SaleViewSet, OrderViewSet, SalesReportView, pos_page
 
+from core.views import UserViewSet, CompanyViewSet, custom_login_view
+
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
 router.register(r'companies', CompanyViewSet)
@@ -26,7 +28,7 @@ router.register(r'orders', OrderViewSet)
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/', custom_login_view, name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/reports/sales/', SalesReportView.as_view(), name='report-sales'),
     path('api/reports/stock/', StockReportView.as_view(), name='report-stock'),
