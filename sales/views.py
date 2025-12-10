@@ -29,12 +29,10 @@ class OrderViewSet(viewsets.ModelViewSet):
 class SalesReportView(APIView):
     """
     Endpoint para reporte de ventas diarias.
-    Devuelve: [{date: '2025-12-09', total_sales: 2500}, ...]
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # Agrupamos las ventas por Fecha (día) y sumamos el total
         sales_data = Sale.objects.annotate(
             date=TruncDate('created_at')
         ).values('date').annotate(
